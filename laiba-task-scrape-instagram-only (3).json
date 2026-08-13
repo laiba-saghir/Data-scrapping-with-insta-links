@@ -1,0 +1,708 @@
+{
+  "name": "laiba-task-scrape (insta-only v3)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "9774ae10-f3d0-45bb-b189-9dd9086276bb",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1uqpnttNJQhwlUBlvw_KoAzGFOpaQuAnsilaSARI59to",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "lahore"
+        },
+        "options": {}
+      },
+      "id": "gexlead001-0001-4000-8000-000000000001",
+      "name": "Get Existing Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -2180,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QYW7vU5JigJCiTVt",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a de-dup set from everything already in the sheet, keyed on\n// normalized website (or normalized business name if no website).\n// Stored in workflow static data so later nodes can check against it\n// even across different niches/locations run today.\nfunction normalizeWebsite(url) {\n  if (!url) return '';\n  return String(url).toLowerCase().trim()\n    .replace(/^https?:\\/\\//, '')\n    .replace(/^www\\./, '')\n    .replace(/\\/+$/, '');\n}\nfunction normalizeName(name) {\n  return String(name || '').toLowerCase().trim().replace(/\\s+/g, ' ');\n}\n\nconst staticData = $getWorkflowStaticData('global');\nconst seen = new Set();\n\nfor (const item of $input.all()) {\n  const website = item.json['Website'] || '';\n  const name = item.json['Business name'] || '';\n  const key = normalizeWebsite(website) || normalizeName(name);\n  if (key) seen.add(key);\n}\n\nstaticData.seenKeys = Array.from(seen);\nreturn [{ json: { existingLeadsCount: seen.size } }];"
+      },
+      "id": "gexlead001-0002-4000-8000-000000000002",
+      "name": "Build Dedup Set",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1960,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// EDIT THIS to scrape a new niche/location.\n// Nothing else in the workflow needs to change.\n//\n// Same service-provider niches as the Karachi run (these are the\n// businesses that would actually want the company's software),\n// now spread across cities other than Lahore/Karachi.\n//\n// Cost guide: total Apify usage this run \u2248\n//   searchStringsArray.length x maxCrawledPlacesPerSearch\n// Check your remaining Apify credit balance before raising these.\n// ============================================\nconst searchStringsArray = [\n  \"Digital marketing agencies in Islamabad\",\n  \"Digital marketing agencies in Rawalpindi\",\n  \"Web development agencies in Faisalabad\",\n  \"Web development agencies in Multan\",\n  \"Graphic design services in Peshawar\",\n  \"Graphic design services in Gujranwala\",\n  \"Advertising agencies in Hyderabad\",\n  \"Advertising agencies in Sialkot\",\n  \"Event management companies in Islamabad\",\n  \"Event management companies in Rawalpindi\",\n  \"Interior design services in Faisalabad\",\n  \"Interior design services in Multan\",\n  \"Photography studios in Peshawar\",\n  \"Photography studios in Gujranwala\",\n  \"IT services companies in Hyderabad\",\n  \"IT services companies in Sialkot\"\n];\n\nconst maxCrawledPlacesPerSearch = 80; // 16 queries x 80 = 1,280 places (fits ~$3.3 of remaining budget)\n\nreturn [{\n  json: { searchStringsArray, maxCrawledPlacesPerSearch }\n}];"
+      },
+      "id": "gexlead001-0003-4000-8000-000000000003",
+      "name": "Search Config (EDIT ME)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1740,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.apify.com/v2/acts/compass~crawler-google-places/runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.APIFY_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ searchStringsArray: $json.searchStringsArray, maxCrawledPlacesPerSearch: $json.maxCrawledPlacesPerSearch }) }}",
+        "options": {}
+      },
+      "id": "295768e1-b2f5-41e1-a308-d8d9ebe5c764",
+      "name": "Start Apify Google Maps Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1520,
+        200
+      ],
+      "notesInFlow": true,
+      "notes": "Body now comes from 'Search Config (EDIT ME)' \u2014 edit the niche/location there, not here."
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "id": "e35f2fb3-a888-4272-8e68-ac6502c1ef0c",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1632,
+        200
+      ],
+      "webhookId": "b1b1b1b1-0003-4000-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/actor-runs/{{ $('Start Apify Google Maps Scraper').item.json.data.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.APIFY_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fe770f44-4753-489d-b132-5ff358204ad7",
+      "name": "Get Run Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1408,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "run-status-check-0001",
+              "leftValue": "={{ $json.data.status }}",
+              "rightValue": "SUCCEEDED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d",
+      "name": "Is Run Finished?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1184,
+        200
+      ],
+      "notes": "Big multi-query crawls take longer than a fixed 60s wait. This polls every 15s until Apify reports SUCCEEDED instead of guessing a fixed delay and failing on 'Fetch Dataset Items' if the run isn't done yet."
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "b2c3d4e5-f6a7-4b5c-9d0e-1f2a3b4c5d6e",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1184,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $json.data.defaultDatasetId }}/items",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $vars.APIFY_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bbee6a52-3a91-424a-b5cf-9ad51b754d6b",
+      "name": "Fetch Dataset Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize output so we get one item per business,\n// regardless of whether the HTTP node auto-split the array\n// or returned it as a single item wrapping the array.\nconst inputItems = $input.all();\nlet businesses = [];\n\nfor (const item of inputItems) {\n  if (Array.isArray(item.json)) {\n    businesses.push(...item.json);\n  } else {\n    businesses.push(item.json);\n  }\n}\n\nreturn businesses.map((b) => ({ json: b }));"
+      },
+      "id": "21c1060d-196b-45e5-87a4-a6713e15c950",
+      "name": "Normalize Businesses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedupe across the 6 overlapping search queries.\n// Prefer Apify's placeId (stable, unique per business).\n// Fall back to title+address if placeId is ever missing.\nconst seen = new Set();\nconst deduped = [];\nlet duplicateCount = 0;\n\nfor (const item of $input.all()) {\n  const b = item.json;\n  const key = b.placeId\n    ? `id:${b.placeId}`\n    : `fallback:${(b.title || '').trim().toLowerCase()}|${(b.address || '').trim().toLowerCase()}`;\n\n  if (seen.has(key)) {\n    duplicateCount++;\n    continue;\n  }\n  seen.add(key);\n  deduped.push({ json: b });\n}\n\nconsole.log(`Deduped ${duplicateCount} duplicate leads across overlapping search queries. ${deduped.length} unique leads remain.`);\nreturn deduped;"
+      },
+      "id": "c3d4e5f6-a7b8-4c5d-9e0f-1a2b3c4d5e6f",
+      "name": "Deduplicate Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        200
+      ],
+      "notes": "6 queries covering overlapping areas of Lahore WILL return the same business more than once. Without this, you'd double-bill Apify credits fetching the same website twice and write duplicate rows to the sheet."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Drop anything already present in the sheet from a previous run\n// (any niche/location) \u2014 checked against the set built at the start.\nfunction normalizeWebsite(url) {\n  if (!url) return '';\n  return String(url).toLowerCase().trim()\n    .replace(/^https?:\\/\\//, '')\n    .replace(/^www\\./, '')\n    .replace(/\\/+$/, '');\n}\nfunction normalizeName(name) {\n  return String(name || '').toLowerCase().trim().replace(/\\s+/g, ' ');\n}\n\nconst staticData = $getWorkflowStaticData('global');\nconst seen = new Set(staticData.seenKeys || []);\nconst unique = [];\nlet skipped = 0;\n\nfor (const item of $input.all()) {\n  const b = item.json;\n  const key = normalizeWebsite(b.website) || normalizeName(b.title);\n  if (!key || seen.has(key)) { skipped++; continue; }\n  seen.add(key);\n  unique.push(item);\n}\n\nstaticData.seenKeys = Array.from(seen);\nconsole.log(`Skipped ${skipped} leads already in the sheet from a previous run. ${unique.length} genuinely new leads remain.`);\nreturn unique;"
+      },
+      "id": "gexlead001-0004-4000-8000-000000000004",
+      "name": "Filter Already-Scraped Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "17072462-f7cc-4b64-b16a-e5ffe861df04",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -64,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b1b1b1b1-cond-0001",
+              "leftValue": "={{ $json.website }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fa89290e-6eb2-4d50-970b-05f9fb762556",
+      "name": "Has Website?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        160,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.website }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "id": "8cca76e3-ccbd-4773-ac59-8c8e80a3fc2e",
+      "name": "Fetch Business Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        88
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "FIX: responseFormat explicitly set to 'text' so a successful fetch always lands in a 'data' property, which is what HTML Extract Links reads from by default. Before, format was unset, so JSON-responding or odd sites didn't produce a 'data' field at all."
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "links",
+              "cssSelector": "a[href*='instagram.com']",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f339c28-a839-4a5b-b2db-cf943cc9d7f4",
+      "name": "HTML Extract Links",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        88
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Only extracts <a> tags whose href contains instagram.com \u2014 skips every other link on the page instead of pulling all links and filtering afterward."
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = [];\n\nfor (const item of $input.all()) {\n  const links = item.json.links || [];\n  const original = $('Has Website?').item.json;\n\n  // If Google Maps' own \"website\" field already IS an Instagram profile\n  // (very common for small businesses that never built a real site),\n  // use it directly \u2014 no need to trust the page-scrape result for it.\n  const websiteField = String(original.website || '');\n  let instagramLink = websiteField.includes('instagram.com') ? websiteField : '';\n\n  if (!instagramLink) {\n    instagramLink = Array.isArray(links)\n      ? links.find((l) => typeof l === 'string' && l.includes('instagram.com')) || ''\n      : '';\n  }\n\n  items.push({\n    json: {\n      ...original,\n      instagram: instagramLink\n    }\n  });\n}\n\nreturn items;"
+      },
+      "id": "557a1709-e4c3-40d2-bc52-3d0d84648315",
+      "name": "Filter Instagram Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        88
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1uqpnttNJQhwlUBlvw_KoAzGFOpaQuAnsilaSARI59to",
+          "mode": "list",
+          "cachedResultName": "instagram scrapping sheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uqpnttNJQhwlUBlvw_KoAzGFOpaQuAnsilaSARI59to/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "lahore",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1uqpnttNJQhwlUBlvw_KoAzGFOpaQuAnsilaSARI59to/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Instagram": "={{ '=HYPERLINK(\"' + $json.instagram + '\",\"' + $json.instagram + '\")' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Instagram",
+              "displayName": "Instagram",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "USER_ENTERED"
+        }
+      },
+      "id": "8d99324b-0250-4785-a482-16d8d032c5c9",
+      "name": "Google Sheets - Append Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        832,
+        160
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "QYW7vU5JigJCiTVt",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-insta-cond-0001",
+              "leftValue": "={{ $json.instagram }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hasinsta001-0001-4000-8000-000000000001",
+      "name": "Has Instagram Link?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        608,
+        200
+      ],
+      "notes": "Only businesses with a real Instagram link found get written to the sheet. Everything else skips the Sheets write and goes straight back into the loop \u2014 keeps the sheet clean and only counts real Instagram URLs."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Dedup Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Dedup Set": {
+      "main": [
+        [
+          {
+            "node": "Search Config (EDIT ME)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Config (EDIT ME)": {
+      "main": [
+        [
+          {
+            "node": "Start Apify Google Maps Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Apify Google Maps Scraper": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Get Run Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Run Details": {
+      "main": [
+        [
+          {
+            "node": "Is Run Finished?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Run Finished?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Dataset Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Before Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          {
+            "node": "Get Run Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Dataset Items": {
+      "main": [
+        [
+          {
+            "node": "Normalize Businesses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Businesses": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate Leads": {
+      "main": [
+        [
+          {
+            "node": "Filter Already-Scraped Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Already-Scraped Leads": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Has Website?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Website?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Business Website",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Business Website": {
+      "main": [
+        [
+          {
+            "node": "HTML Extract Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML Extract Links": {
+      "main": [
+        [
+          {
+            "node": "Filter Instagram Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Instagram Link": {
+      "main": [
+        [
+          {
+            "node": "Has Instagram Link?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets - Append Row": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Instagram Link?": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets - Append Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "750824d5-55f7-473d-8f9c-92c4874b22bf-fixed-instaonly",
+  "meta": {
+    "instanceId": "a008aa0e0202239f1bce561a4236c9a1d3c702d6abc70b230813ed552b6ab0ec"
+  },
+  "nodeGroups": [],
+  "id": "LvSlHAc0a3fupGMp",
+  "tags": []
+}
